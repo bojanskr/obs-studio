@@ -1,61 +1,82 @@
-project(win-capture)
+cmake_minimum_required(VERSION 3.28...3.30)
 
-option(ENABLE_COMPAT_UPDATES "Checks for service updates" OFF)
+if(NOT TARGET OBS::obfuscate)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/libobs" "${CMAKE_BINARY_DIR}/libobs")
+endif()
 
-set(COMPAT_URL
-    "https://obsproject.com/obs2_update/win-capture"
-    CACHE STRING "Default services package URL")
+if(NOT TARGET OBS::inject-library)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/obs-inject-library" "${CMAKE_BINARY_DIR}/shared/obs-inject-library")
+endif()
 
+option(ENABLE_COMPAT_UPDATES "Checks for capture compatibility data updates" ON)
+
+set(COMPAT_URL "https://obsproject.com/obs2_update/win-capture" CACHE STRING "Default services package URL")
 mark_as_advanced(COMPAT_URL)
+
+if(NOT TARGET OBS::ipc-util)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/ipc-util" "${CMAKE_BINARY_DIR}/shared/ipc-util")
+endif()
+
+if(NOT TARGET OBS::file-updater)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/file-updater" "${CMAKE_BINARY_DIR}/shared/file-updater")
+endif()
+
+find_package(jansson REQUIRED)
 
 add_library(win-capture MODULE)
 add_library(OBS::capture ALIAS win-capture)
 
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/compat-config.h.in ${CMAKE_BINARY_DIR}/config/compat-config.h)
-
 target_sources(
   win-capture
-  PRIVATE plugin-main.c
-          app-helpers.c
-          app-helpers.h
-          cursor-capture.c
-          cursor-capture.h
-          dc-capture.c
-          dc-capture.h
-          duplicator-monitor-capture.c
-          game-capture.c
-          game-capture-file-init.c
-          graphics-hook-info.h
-          graphics-hook-ver.h
-          hook-helpers.h
-          inject-library.c
-          inject-library.h
-          load-graphics-offsets.c
-          monitor-capture.c
-          nt-stuff.c
-          nt-stuff.h
-          window-capture.c
-          compat-helpers.c
-          compat-helpers.h
-          compat-format-ver.h
-          ../../libobs/util/windows/obfuscate.c
-          ../../libobs/util/windows/obfuscate.h
-          ${CMAKE_BINARY_DIR}/config/compat-config.h)
+  PRIVATE
+    app-helpers.c
+    app-helpers.h
+    audio-helpers.c
+    audio-helpers.h
+    compat-format-ver.h
+    compat-helpers.c
+    compat-helpers.h
+    cursor-capture.c
+    cursor-capture.h
+    dc-capture.c
+    dc-capture.h
+    duplicator-monitor-capture.c
+    game-capture-file-init.c
+    game-capture.c
+    load-graphics-offsets.c
+    monitor-capture.c
+    nt-stuff.c
+    nt-stuff.h
+    plugin-main.c
+    window-capture.c
+)
 
-target_link_libraries(win-capture PRIVATE OBS::libobs OBS::ipc-util OBS::file-updater Jansson::Jansson)
+target_compile_definitions(
+  win-capture
+  PRIVATE
+    COMPAT_URL="${COMPAT_URL}"
+    "$<$<BOOL:${ENABLE_COMPAT_UPDATES}>:ENABLE_COMPAT_UPDATES>"
+    OBS_VERSION="${OBS_VERSION_CANONICAL}"
+)
 
-set_target_properties(win-capture PROPERTIES FOLDER "plugins/win-capture")
+target_link_libraries(
+  win-capture
+  PRIVATE
+    OBS::file-updater
+    OBS::hook-config
+    OBS::inject-library
+    OBS::ipc-util
+    OBS::libobs
+    OBS::obfuscate
+    OBS::w32-pthreads
+    OBS::winrt-headers
+    jansson::jansson
+)
 
-if(MSVC)
-  target_link_libraries(win-capture PRIVATE OBS::w32-pthreads)
-  target_link_options(win-capture PRIVATE "LINKER:/IGNORE:4098")
-endif()
+# Remove once jansson has been fixed on obs-deps
+target_link_options(win-capture PRIVATE /IGNORE:4098)
 
-target_compile_definitions(win-capture PRIVATE UNICODE _UNICODE _CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
-
-set_property(GLOBAL APPEND PROPERTY OBS_MODULE_LIST "win-capture")
-
-setup_plugin_target(win-capture)
+set_target_properties_obs(win-capture PROPERTIES FOLDER plugins/win-capture PREFIX "")
 
 add_subdirectory(graphics-hook)
 add_subdirectory(get-graphics-offsets)

@@ -1,30 +1,46 @@
-project(get-graphics-offsets)
+cmake_minimum_required(VERSION 3.28...3.30)
 
-add_executable(get-graphics-offsets)
-
-target_sources(
-  get-graphics-offsets
-  PRIVATE get-graphics-offsets.c
-          get-graphics-offsets.h
-          dxgi-offsets.cpp
-          d3d8-offsets.cpp
-          d3d9-offsets.cpp
-          ../graphics-hook-info.h
-          ../hook-helpers.h)
-
-target_include_directories(get-graphics-offsets PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
-target_link_libraries(get-graphics-offsets d3d9.lib dxgi.lib d3d11.lib)
-
-if(MSVC)
-  target_compile_options(get-graphics-offsets PRIVATE "$<IF:$<CONFIG:Debug>,/MTd,/MT>")
+if(NOT TARGET OBS::d3d8-api)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/obs-d3d8-api" obs-d3d8-api)
 endif()
 
-set_target_properties(get-graphics-offsets PROPERTIES FOLDER "plugins/win-capture")
-set_target_properties(get-graphics-offsets
-                      PROPERTIES OUTPUT_NAME "get-graphics-offsets$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,64,32>")
+if(NOT TARGET OBS::hook-config)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/obs-hook-config" obs-hook-config)
+endif()
 
-set(OBS_PLUGIN_DESTINATION "${OBS_DATA_DESTINATION}/obs-plugins/win-capture/")
-setup_plugin_target(get-graphics-offsets)
+add_executable(get-graphics-offsets)
+target_sources(
+  get-graphics-offsets
+  PRIVATE d3d8-offsets.cpp d3d9-offsets.cpp dxgi-offsets.cpp get-graphics-offsets.c get-graphics-offsets.h
+)
 
-add_dependencies(win-capture get-graphics-offsets)
+target_link_libraries(
+  get-graphics-offsets
+  PRIVATE OBS::hook-config OBS::d3d8-api d3d9.lib dxgi.lib d3d11.lib
+)
+
+if(OBS_PARENT_ARCHITECTURE STREQUAL CMAKE_VS_PLATFORM_NAME)
+  if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
+    add_custom_command(
+      TARGET get-graphics-offsets
+      POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" --build ${CMAKE_SOURCE_DIR}/build_x86 --config $<CONFIG> -t get-graphics-offsets
+      COMMENT "Build x86 get-graphics-offsets"
+    )
+  endif()
+
+  add_dependencies(win-capture get-graphics-offsets)
+endif()
+
+if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
+  set(_OUTPUT_NAME get-graphics-offsets64)
+else()
+  set(_OUTPUT_NAME get-graphics-offsets32)
+endif()
+
+set_target_properties_obs(
+  get-graphics-offsets PROPERTIES
+                       FOLDER plugins/win-capture
+                       OUTPUT_NAME ${_OUTPUT_NAME}
+                       MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+)

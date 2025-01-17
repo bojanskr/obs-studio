@@ -91,6 +91,9 @@ enum video_format {
 
 	/* packed 4:2:2 format, 10 bpp */
 	VIDEO_FORMAT_V210,
+
+	/* packed uncompressed 10-bit format */
+	VIDEO_FORMAT_R10L,
 };
 
 enum video_trc {
@@ -164,6 +167,7 @@ static inline bool format_is_yuv(enum video_format format)
 	case VIDEO_FORMAT_BGRX:
 	case VIDEO_FORMAT_Y800:
 	case VIDEO_FORMAT_BGR3:
+	case VIDEO_FORMAT_R10L:
 		return false;
 	}
 
@@ -221,6 +225,8 @@ static inline const char *get_video_format_name(enum video_format format)
 		return "P416";
 	case VIDEO_FORMAT_V210:
 		return "v210";
+	case VIDEO_FORMAT_R10L:
+		return "R10l";
 	case VIDEO_FORMAT_NONE:;
 	}
 
@@ -246,19 +252,16 @@ static inline const char *get_video_colorspace_name(enum video_colorspace cs)
 	return "Unknown";
 }
 
-static inline enum video_range_type
-resolve_video_range(enum video_format format, enum video_range_type range)
+static inline enum video_range_type resolve_video_range(enum video_format format, enum video_range_type range)
 {
 	if (range == VIDEO_RANGE_DEFAULT) {
-		range = format_is_yuv(format) ? VIDEO_RANGE_PARTIAL
-					      : VIDEO_RANGE_FULL;
+		range = format_is_yuv(format) ? VIDEO_RANGE_PARTIAL : VIDEO_RANGE_FULL;
 	}
 
 	return range;
 }
 
-static inline const char *get_video_range_name(enum video_format format,
-					       enum video_range_type range)
+static inline const char *get_video_range_name(enum video_format format, enum video_range_type range)
 {
 	range = resolve_video_range(format, range);
 	return range == VIDEO_RANGE_FULL ? "Full" : "Partial";
@@ -282,14 +285,11 @@ struct video_scale_info {
 
 EXPORT enum video_format video_format_from_fourcc(uint32_t fourcc);
 
-EXPORT bool video_format_get_parameters(enum video_colorspace color_space,
-					enum video_range_type range,
-					float matrix[16], float min_range[3],
-					float max_range[3]);
-EXPORT bool video_format_get_parameters_for_format(
-	enum video_colorspace color_space, enum video_range_type range,
-	enum video_format format, float matrix[16], float min_range[3],
-	float max_range[3]);
+EXPORT bool video_format_get_parameters(enum video_colorspace color_space, enum video_range_type range,
+					float matrix[16], float min_range[3], float max_range[3]);
+EXPORT bool video_format_get_parameters_for_format(enum video_colorspace color_space, enum video_range_type range,
+						   enum video_format format, float matrix[16], float min_range[3],
+						   float max_range[3]);
 
 #define VIDEO_OUTPUT_SUCCESS 0
 #define VIDEO_OUTPUT_INVALIDPARAM -1
@@ -298,21 +298,18 @@ EXPORT bool video_format_get_parameters_for_format(
 EXPORT int video_output_open(video_t **video, struct video_output_info *info);
 EXPORT void video_output_close(video_t *video);
 
-EXPORT bool
-video_output_connect(video_t *video, const struct video_scale_info *conversion,
-		     void (*callback)(void *param, struct video_data *frame),
-		     void *param);
-EXPORT void video_output_disconnect(video_t *video,
-				    void (*callback)(void *param,
-						     struct video_data *frame),
+EXPORT bool video_output_connect(video_t *video, const struct video_scale_info *conversion,
+				 void (*callback)(void *param, struct video_data *frame), void *param);
+EXPORT bool video_output_connect2(video_t *video, const struct video_scale_info *conversion,
+				  uint32_t frame_rate_divisor, void (*callback)(void *param, struct video_data *frame),
+				  void *param);
+EXPORT void video_output_disconnect(video_t *video, void (*callback)(void *param, struct video_data *frame),
 				    void *param);
 
 EXPORT bool video_output_active(const video_t *video);
 
-EXPORT const struct video_output_info *
-video_output_get_info(const video_t *video);
-EXPORT bool video_output_lock_frame(video_t *video, struct video_frame *frame,
-				    int count, uint64_t timestamp);
+EXPORT const struct video_output_info *video_output_get_info(const video_t *video);
+EXPORT bool video_output_lock_frame(video_t *video, struct video_frame *frame, int count, uint64_t timestamp);
 EXPORT void video_output_unlock_frame(video_t *video);
 EXPORT uint64_t video_output_get_frame_time(const video_t *video);
 EXPORT void video_output_stop(video_t *video);
@@ -330,6 +327,9 @@ extern void video_output_inc_texture_encoders(video_t *video);
 extern void video_output_dec_texture_encoders(video_t *video);
 extern void video_output_inc_texture_frames(video_t *video);
 extern void video_output_inc_texture_skipped_frames(video_t *video);
+
+extern video_t *video_output_create_with_frame_rate_divisor(video_t *video, uint32_t divisor);
+extern void video_output_free_frame_rate_divisor(video_t *video);
 
 #ifdef __cplusplus
 }

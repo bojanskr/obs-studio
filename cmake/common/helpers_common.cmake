@@ -1,12 +1,6 @@
 # OBS CMake common helper functions module
 
-# cmake-format: off
-# cmake-lint: disable=C0103
-# cmake-lint: disable=C0301
-# cmake-lint: disable=C0307
-# cmake-lint: disable=R0912
-# cmake-lint: disable=R0915
-# cmake-format: on
+include_guard(GLOBAL)
 
 # message_configuration: Function to print configuration outcome
 function(message_configuration)
@@ -23,14 +17,12 @@ function(message_configuration)
     "               | (_) | |_) \\__ \\_____\\__ \\ |_| |_| | (_| | | (_) |\n"
     "                \\___/|_.__/|___/     |___/\\__|\\__,_|\\__,_|_|\\___/ \n"
     "\nOBS:  Application Version: ${OBS_VERSION} - Build Number: ${OBS_BUILD_NUMBER}\n"
-    "==================================================================================\n\n")
+    "==================================================================================\n\n"
+  )
 
   get_property(OBS_FEATURES_ENABLED GLOBAL PROPERTY OBS_FEATURES_ENABLED)
-  list(
-    SORT OBS_FEATURES_ENABLED
-    COMPARE NATURAL
-    CASE SENSITIVE
-    ORDER ASCENDING)
+  list(SORT OBS_FEATURES_ENABLED COMPARE NATURAL CASE SENSITIVE ORDER ASCENDING)
+
   if(OBS_FEATURES_ENABLED)
     message(NOTICE "------------------------       Enabled Features           ------------------------")
     foreach(feature IN LISTS OBS_FEATURES_ENABLED)
@@ -39,11 +31,8 @@ function(message_configuration)
   endif()
 
   get_property(OBS_FEATURES_DISABLED GLOBAL PROPERTY OBS_FEATURES_DISABLED)
-  list(
-    SORT OBS_FEATURES_DISABLED
-    COMPARE NATURAL
-    CASE SENSITIVE
-    ORDER ASCENDING)
+  list(SORT OBS_FEATURES_DISABLED COMPARE NATURAL CASE SENSITIVE ORDER ASCENDING)
+
   if(OBS_FEATURES_DISABLED)
     message(NOTICE "------------------------       Disabled Features          ------------------------")
     foreach(feature IN LISTS OBS_FEATURES_DISABLED)
@@ -53,11 +42,8 @@ function(message_configuration)
 
   if(ENABLE_PLUGINS)
     get_property(OBS_MODULES_ENABLED GLOBAL PROPERTY OBS_MODULES_ENABLED)
-    list(
-      SORT OBS_MODULES_ENABLED
-      COMPARE NATURAL
-      CASE SENSITIVE
-      ORDER ASCENDING)
+    list(SORT OBS_MODULES_ENABLED COMPARE NATURAL CASE SENSITIVE ORDER ASCENDING)
+
     if(OBS_MODULES_ENABLED)
       message(NOTICE "------------------------        Enabled Modules           ------------------------")
       foreach(feature IN LISTS OBS_MODULES_ENABLED)
@@ -66,11 +52,8 @@ function(message_configuration)
     endif()
 
     get_property(OBS_MODULES_DISABLED GLOBAL PROPERTY OBS_MODULES_DISABLED)
-    list(
-      SORT OBS_MODULES_DISABLED
-      COMPARE NATURAL
-      CASE SENSITIVE
-      ORDER ASCENDING)
+    list(SORT OBS_MODULES_DISABLED COMPARE NATURAL CASE SENSITIVE ORDER ASCENDING)
+
     if(OBS_MODULES_DISABLED)
       message(NOTICE "------------------------        Disabled Modules          ------------------------")
       foreach(feature IN LISTS OBS_MODULES_DISABLED)
@@ -104,88 +87,71 @@ function(target_disable target)
   set_property(GLOBAL APPEND PROPERTY OBS_MODULES_DISABLED ${target})
 endfunction()
 
-# * Use QT_VERSION value as a hint for desired Qt version
-# * If "AUTO" was specified, prefer Qt6 over Qt5
-# * Creates versionless targets of desired component if none had been created by Qt itself (Qt versions < 5.15)
-if(NOT QT_VERSION)
-  set(QT_VERSION
-      AUTO
-      CACHE STRING "OBS Qt version [AUTO, 5, 6]" FORCE)
-  set_property(CACHE QT_VERSION PROPERTY STRINGS AUTO 5 6)
-endif()
+# _handle_generator_expression_dependency: Helper function to yield dependency from a generator expression
+function(_handle_generator_expression_dependency library)
+  set(oneValueArgs FOUND_VAR)
+  set(multiValueArgs)
+  cmake_parse_arguments(var "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
 
-# find_qt: Macro to find best possible Qt version for use with the project:
-macro(find_qt)
-  set(multiValueArgs COMPONENTS COMPONENTS_WIN COMPONENTS_MAC COMPONENTS_LINUX)
-  cmake_parse_arguments(find_qt "" "${oneValueArgs}" "${multiValueArgs}" ${ARGN})
+  set(${var_FOUND_VAR} "${var_FOUND_VAR}-NOTFOUND")
 
-  # Do not use versionless targets in the first step to avoid Qt::Core being clobbered by later opportunistic
-  # find_package runs
-  set(QT_NO_CREATE_VERSIONLESS_TARGETS TRUE)
+  message(DEBUG "Checking ${library}...")
 
-  message(DEBUG "Start Qt version discovery...")
-  # Loop until _QT_VERSION is set or FATAL_ERROR aborts script execution early
-  while(NOT _QT_VERSION)
-    message(DEBUG "QT_VERSION set to ${QT_VERSION}")
-    if(QT_VERSION STREQUAL AUTO AND NOT qt_test_version)
-      set(qt_test_version 6)
-    elseif(NOT QT_VERSION STREQUAL AUTO)
-      set(qt_test_version ${QT_VERSION})
-    endif()
-    message(DEBUG "Attempting to find Qt${qt_test_version}")
+  if(library MATCHES "\\$<\\$<PLATFORM_ID:[^>]+>:.+>" OR library MATCHES "\\$<\\$<NOT:\\$<PLATFORM_ID:[^>]+>>:.+>")
+    # Platform-dependent generator expression found. Platforms are a comma-separated list of CMake host OS identifiers.
+    # Convert to CMake list and check if current host OS is contained in list.
+    string(REGEX REPLACE "\\$<.*\\$<PLATFORM_ID:([^>]+)>>?:([^>]+)>" "\\1;\\2" gen_expression "${library}")
+    list(GET gen_expression 0 gen_platform)
+    list(GET gen_expression 1 gen_library)
+    string(REPLACE "," ";" gen_platform "${gen_platform}")
 
-    find_package(
-      Qt${qt_test_version}
-      COMPONENTS Core
-      QUIET)
+    set(${var_FOUND_VAR} "${var_FOUND_VAR}-SKIP")
 
-    if(TARGET Qt${qt_test_version}::Core)
-      set(_QT_VERSION
-          ${qt_test_version}
-          CACHE INTERNAL "")
-      message(STATUS "Qt version found: ${_QT_VERSION}")
-      unset(qt_test_version)
-      break()
-    elseif(QT_VERSION STREQUAL AUTO)
-      if(qt_test_version EQUAL 6)
-        message(WARNING "Qt6 was not found, falling back to Qt5")
-        set(qt_test_version 5)
-        continue()
+    if(library MATCHES "\\$<\\$<NOT:.+>.+>")
+      if(NOT CMAKE_SYSTEM_NAME IN_LIST gen_platform)
+        set(${var_FOUND_VAR} "${gen_library}")
+      endif()
+    else()
+      if(CMAKE_SYSTEM_NAME IN_LIST gen_platform)
+        set(${var_FOUND_VAR} "${gen_library}")
       endif()
     endif()
-    message(FATAL_ERROR "Neither Qt6 nor Qt5 found.")
-  endwhile()
+  elseif(library MATCHES "\\$<\\$<BOOL:[^>]+>:.+>")
+    # Boolean generator expression found. Consider parameter a CMake variable that resolves into a CMake-like boolean
+    # value for a simple conditional check.
+    string(REGEX REPLACE "\\$<\\$<BOOL:([^>]+)>:([^>]+)>" "\\1;\\2" gen_expression "${library}")
+    list(GET gen_expression 0 gen_boolean)
+    list(GET gen_expression 1 gen_library)
 
-  # Enable versionless targets for the remaining Qt components
-  set(QT_NO_CREATE_VERSIONLESS_TARGETS FALSE)
+    set(${var_FOUND_VAR} "${var_FOUND_VAR}-SKIP")
 
-  set(qt_components ${find_qt_COMPONENTS})
-  if(OS_WINDOWS)
-    list(APPEND qt_components ${find_qt_COMPONENTS_WIN})
-  elseif(OS_MACOS)
-    list(APPEND qt_components ${find_qt_COMPONENTS_MAC})
-  else()
-    list(APPEND qt_components ${find_qt_COMPONENTS_LINUX})
-  endif()
-  message(DEBUG "Trying to find Qt components ${qt_components}...")
-
-  find_package(Qt${_QT_VERSION} REQUIRED ${qt_components})
-
-  list(APPEND qt_components Core)
-
-  if("Gui" IN_LIST find_qt_COMPONENTS_LINUX)
-    list(APPEND qt_components "GuiPrivate")
-  endif()
-
-  # Check for versionless targets of each requested component and create if necessary
-  foreach(component IN LISTS qt_components)
-    message(DEBUG "Checking for target Qt::${component}")
-    if(NOT TARGET Qt::${component} AND TARGET Qt${_QT_VERSION}::${component})
-      add_library(Qt::${component} INTERFACE IMPORTED)
-      set_target_properties(Qt::${component} PROPERTIES INTERFACE_LINK_LIBRARIES Qt${_QT_VERSION}::${component})
+    if(${gen_boolean})
+      set(${var_FOUND_VAR} "${gen_library}")
     endif()
-  endforeach()
-endmacro()
+  elseif(library MATCHES "\\$<TARGET_NAME_IF_EXISTS:[^>]+>")
+    # Target-dependent generator expression found. Consider parameter to be a CMake target identifier and check for
+    # target existence.
+    string(REGEX REPLACE "\\$<TARGET_NAME_IF_EXISTS:([^>]+)>" "\\1" gen_target "${library}")
+
+    set(${var_FOUND_VAR} "${var_FOUND_VAR}-SKIP")
+
+    if(TARGET ${gen_target})
+      set(${var_FOUND_VAR} "${gen_target}")
+    endif()
+  elseif(library MATCHES "\\$<.*Qt6::(EntryPointPrivate|QDarwin.*PermissionPlugin)>")
+    set(${var_FOUND_VAR} "${var_FOUND_VAR}-SKIP")
+  else()
+    # Unknown or unimplemented generator expression found. Abort script run to either add to ignore list or implement
+    # detection.
+    message(FATAL_ERROR "${library} is an unsupported generator expression for linked libraries.")
+  endif()
+
+  if(CMAKE_VERSION VERSION_LESS 3.25)
+    set(${var_FOUND_VAR} ${var_FOUND_VAR} PARENT_SCOPE)
+  else()
+    return(PROPAGATE ${var_FOUND_VAR})
+  endif()
+endfunction()
 
 # find_dependencies: Check linked interface and direct dependencies of target
 function(find_dependencies)
@@ -219,45 +185,11 @@ function(find_dependencies)
       continue()
     elseif(library MATCHES "\\$<.*:[^>]+>")
       # Generator expression found
-      if(library MATCHES "\\$<\\$<PLATFORM_ID:[^>]+>:.+>")
-        # Platform-dependent generator expression found - platforms are a comma-separated list of CMake host OS
-        # identifiers. Convert to CMake list and check if current host os is contained in list.
-        string(REGEX REPLACE "\\$<\\$<PLATFORM_ID:([^>]+)>:([^>]+)>" "\\1;\\2" gen_expression "${library}")
-        list(GET gen_expression 0 gen_platform)
-        list(GET gen_expression 1 gen_library)
-        string(REPLACE "," ";" gen_platform "${gen_platform}")
-        if(CMAKE_HOST_SYSTEM_NAME IN_LIST platform)
-          set(library "${gen_library}")
-        else()
-          continue()
-        endif()
-      elseif(library MATCHES "\\$<\\$<BOOL:[^>]+>:.+>")
-        # Boolean generator expression found - consider parameter a CMake variable that resolves into a CMake-like
-        # boolean value for a simple conditional check.
-        string(REGEX REPLACE "\\$<\\$<BOOL:([^>]+)>:([^>]+)>" "\\1;\\2" gen_expression "${library}")
-        list(GET gen_expression 0 gen_boolean)
-        list(GET gen_expression 1 gen_library)
-        if(${gen_boolean})
-          set(library "${gen_library}")
-        else()
-          continue()
-        endif()
-      elseif(library MATCHES "\\$<TARGET_NAME_IF_EXISTS:[^>]+>")
-        # Target-dependent generator expression found - consider parameter to be a CMake target identifier and check for
-        # target existence.
-        string(REGEX REPLACE "\\$<TARGET_NAME_IF_EXISTS:([^>]+)>" "\\1" gen_target "${library}")
-        if(TARGET ${gen_target})
-          set(library "${gen_target}")
-        else()
-          continue()
-        endif()
-      elseif(library MATCHES "\\$<.*Qt6::EntryPointPrivate>" OR library MATCHES "\\$<.*Qt6::QDarwin.+PermissionPlugin>")
-        # Known Qt6-specific generator expression, ignored.
+      _handle_generator_expression_dependency(${library} FOUND_VAR found_library)
+      if(found_library STREQUAL found_library-SKIP)
         continue()
-      else()
-        # Unknown or unimplemented generator expression found - abort script run to either add to ignore list or
-        # implement detection.
-        message(FATAL_ERROR "${library} is an unsupported generator expression for linked libraries.")
+      elseif(found_library)
+        set(library ${found_library})
       endif()
     endif()
 
@@ -271,18 +203,14 @@ function(find_dependencies)
   endforeach()
 
   if(NOT is_root)
-    set(found_libraries
-        ${found_libraries}
-        PARENT_SCOPE)
     # Exit recursive branch
-    return()
+    return(PROPAGATE found_libraries)
   endif()
 
   list(REMOVE_DUPLICATES found_libraries)
   list(APPEND ${var_FOUND_VAR} ${found_libraries})
-  set(${var_FOUND_VAR}
-      ${${var_FOUND_VAR}}
-      PARENT_SCOPE)
+
+  return(PROPAGATE ${var_FOUND_VAR})
 endfunction()
 
 # find_qt_plugins: Find and add Qt plugin libraries associated with Qt component to target
@@ -294,8 +222,8 @@ function(find_qt_plugins)
   list(GET library_tuple 0 library_namespace)
   list(GET library_tuple 1 library_name)
 
-  if(NOT ${library_namespace} MATCHES "Qt[56]?")
-    message(FATAL_ERROR "'find_qt_plugins' has to be called with a valid target from the Qt, Qt5, or Qt6 namespace.")
+  if(NOT ${library_namespace} MATCHES "Qt6?")
+    message(FATAL_ERROR "'find_qt_plugins' has to be called with a valid target from the Qt or Qt6 namespace.")
   endif()
 
   list(
@@ -305,11 +233,10 @@ function(find_qt_plugins)
     printsupport
     styles
     imageformats
-    iconengines)
-  list(APPEND qt_plugins_Gui platforminputcontexts virtualkeyboard)
-  list(APPEND qt_plugins_Network bearer)
+    iconengines
+  )
+  list(APPEND qt_plugins_Gui platforminputcontexts)
   list(APPEND qt_plugins_Sql sqldrivers)
-  list(APPEND qt_plugins_Multimedia mediaservice audio)
   list(APPEND qt_plugins_3dRender sceneparsers geometryloaders)
   list(APPEND qt_plugins_3dQuickRender renderplugins)
   list(APPEND qt_plugins_Positioning position)
@@ -338,7 +265,9 @@ function(find_qt_plugins)
           file(
             GLOB plugin_libraries
             RELATIVE "${plugins_location}/${plugin}"
-            "${plugins_location}/${plugin}/*.dylib" "${plugins_location}/${plugin}/*.dll")
+            "${plugins_location}/${plugin}/*.dylib"
+            "${plugins_location}/${plugin}/*.dll"
+          )
           message(DEBUG "Found Qt plugin ${plugin} libraries: ${plugin_libraries}")
           foreach(plugin_library IN ITEMS ${plugin_libraries})
             set(plugin_full_path "${plugins_location}/${plugin}/${plugin_library}")
@@ -349,9 +278,8 @@ function(find_qt_plugins)
     endforeach()
   endif()
 
-  set(${var_FOUND_VAR}
-      ${plugins_list}
-      PARENT_SCOPE)
+  set(${var_FOUND_VAR} ${plugins_list})
+  return(PROPAGATE ${var_FOUND_VAR})
 endfunction()
 
 # target_export: Helper function to export target as CMake package
@@ -365,31 +293,24 @@ function(target_export target)
     set(package_destination "Frameworks/${target}.framework/Resources/cmake")
     set(include_destination "Frameworks/${target}.framework/Headers")
   else()
-    set(package_destination "${OBS_CMAKE_DESTINATION}/${target}")
+    if(OS_WINDOWS)
+      set(package_destination "${OBS_CMAKE_DESTINATION}")
+    else()
+      set(package_destination "${OBS_CMAKE_DESTINATION}/${target}")
+    endif()
     set(include_destination "${OBS_INCLUDE_DESTINATION}")
   endif()
 
   install(
     TARGETS ${target}
     EXPORT ${target}Targets
-    RUNTIME DESTINATION "${OBS_EXECUTABLE_DESTINATION}"
-            COMPONENT Development
-            ${exclude_variant}
-    LIBRARY DESTINATION "${OBS_LIBRARY_DESTINATION}"
-            COMPONENT Development
-            ${exclude_variant}
-    ARCHIVE DESTINATION "${OBS_LIBRARY_DESTINATION}"
-            COMPONENT Development
-            ${exclude_variant}
-    FRAMEWORK DESTINATION Frameworks
-              COMPONENT Development
-              ${exclude_variant}
-    INCLUDES
-    DESTINATION "${include_destination}"
-    PUBLIC_HEADER
-      DESTINATION "${include_destination}"
-      COMPONENT Development
-      ${exclude_variant})
+    RUNTIME DESTINATION "${OBS_EXECUTABLE_DESTINATION}" COMPONENT Development ${exclude_variant}
+    LIBRARY DESTINATION "${OBS_LIBRARY_DESTINATION}" COMPONENT Development ${exclude_variant}
+    ARCHIVE DESTINATION "${OBS_LIBRARY_DESTINATION}" COMPONENT Development ${exclude_variant}
+    FRAMEWORK DESTINATION Frameworks COMPONENT Development ${exclude_variant}
+    INCLUDES DESTINATION "${include_destination}"
+    PUBLIC_HEADER DESTINATION "${include_destination}" COMPONENT Development ${exclude_variant}
+  )
 
   get_target_property(obs_public_headers ${target} OBS_PUBLIC_HEADERS)
 
@@ -411,15 +332,12 @@ function(target_export target)
         FILES ${headers_${header_dir}}
         DESTINATION "${include_destination}/${header_dir}"
         COMPONENT Development
-        ${exclude_variant})
+        ${exclude_variant}
+      )
     endforeach()
 
     if(headers)
-      install(
-        FILES ${headers}
-        DESTINATION "${include_destination}"
-        COMPONENT Development
-        ${exclude_variant})
+      install(FILES ${headers} DESTINATION "${include_destination}" COMPONENT Development ${exclude_variant})
     endif()
   endif()
 
@@ -428,37 +346,41 @@ function(target_export target)
       FILES "${CMAKE_BINARY_DIR}/config/obsconfig.h"
       DESTINATION "${include_destination}"
       COMPONENT Development
-      ${exclude_variant})
+      ${exclude_variant}
+    )
   endif()
 
-  message(DEBUG "Generating export header for target ${target} as ${target}_EXPORT.h...")
-  include(GenerateExportHeader)
-  generate_export_header(${target} EXPORT_FILE_NAME "${target}_EXPORT.h")
-  target_sources(${target} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${target}_EXPORT.h>)
+  get_target_property(target_type ${target} TYPE)
 
-  set_property(
-    TARGET ${target}
-    APPEND
-    PROPERTY PUBLIC_HEADER "${target}_EXPORT.h")
+  if(NOT target_type STREQUAL INTERFACE_LIBRARY)
+    message(DEBUG "Generating export header for target ${target} as ${target}_EXPORT.h...")
+    include(GenerateExportHeader)
+    generate_export_header(${target} EXPORT_FILE_NAME "${target}_EXPORT.h")
+    target_sources(${target} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/${target}_EXPORT.h>)
+
+    set_property(TARGET ${target} APPEND PROPERTY PUBLIC_HEADER "${target}_EXPORT.h")
+  endif()
 
   set(TARGETS_EXPORT_NAME ${target}Targets)
   message(
     DEBUG
-    "Generating CMake package configuration file ${target}Config.cmake with targets file ${TARGETS_EXPORT_NAME}...")
+    "Generating CMake package configuration file ${target}Config.cmake with targets file ${TARGETS_EXPORT_NAME}..."
+  )
   include(CMakePackageConfigHelpers)
-  configure_package_config_file(cmake/${target}Config.cmake.in ${target}Config.cmake
-                                INSTALL_DESTINATION "${package_destination}")
+  configure_package_config_file(
+    cmake/${target}Config.cmake.in
+    ${target}Config.cmake
+    INSTALL_DESTINATION "${package_destination}"
+  )
 
   message(DEBUG "Generating CMake package version configuration file ${target}ConfigVersion.cmake...")
   write_basic_package_version_file(
     "${target}ConfigVersion.cmake"
     VERSION ${OBS_VERSION_CANONICAL}
-    COMPATIBILITY SameMajorVersion)
+    COMPATIBILITY SameMajorVersion
+  )
 
-  export(
-    EXPORT ${target}Targets
-    FILE "${TARGETS_EXPORT_NAME}.cmake"
-    NAMESPACE OBS::)
+  export(EXPORT ${target}Targets FILE "${TARGETS_EXPORT_NAME}.cmake" NAMESPACE OBS::)
 
   export(PACKAGE ${target})
 
@@ -468,19 +390,23 @@ function(target_export target)
     NAMESPACE OBS::
     DESTINATION "${package_destination}"
     COMPONENT Development
-    ${exclude_variant})
+    ${exclude_variant}
+  )
 
   install(
     FILES "${CMAKE_CURRENT_BINARY_DIR}/${target}Config.cmake" "${CMAKE_CURRENT_BINARY_DIR}/${target}ConfigVersion.cmake"
     DESTINATION "${package_destination}"
     COMPONENT Development
-    ${exclude_variant})
+    ${exclude_variant}
+  )
 endfunction()
 
 # check_uuid: Helper function to check for valid UUID
 function(check_uuid uuid_string return_value)
   set(valid_uuid TRUE)
+  # gersemi: off
   set(uuid_token_lengths 8 4 4 4 12)
+  # gersemi: on
   set(token_num 0)
 
   string(REPLACE "-" ";" uuid_tokens ${uuid_string})
@@ -507,14 +433,58 @@ function(check_uuid uuid_string return_value)
     set(valid_uuid FALSE)
   endif()
   message(DEBUG "UUID ${uuid_string} valid: ${valid_uuid}")
-  set(${return_value}
-      ${valid_uuid}
-      PARENT_SCOPE)
+
+  set(${return_value} ${valid_uuid})
+  return(PROPAGATE ${return_value})
 endfunction()
 
-# legacy_check: Checks if new CMake framework was not enabled and load legacy rules instead
-macro(legacy_check)
-  if(OBS_CMAKE_VERSION VERSION_LESS 3.0.0)
-    message(FATAL_ERROR "CMake version changed between CMakeLists.txt.")
+# add_obs_plugin: Add plugin subdirectory if host platform is in specified list of supported platforms and architectures
+function(add_obs_plugin target)
+  set(options WITH_MESSAGE)
+  set(oneValueArgs "")
+  set(multiValueArgs PLATFORMS ARCHITECTURES)
+  cmake_parse_arguments(PARSE_ARGV 0 _AOP "${options}" "${oneValueArgs}" "${multiValueArgs}")
+
+  set(found_platform FALSE)
+  list(LENGTH _AOP_PLATFORMS _AOP_NUM_PLATFORMS)
+
+  set(found_architecture FALSE)
+  list(LENGTH _AOP_ARCHITECTURES _AOP_NUM_ARCHITECTURES)
+
+  if(_AOP_NUM_PLATFORMS EQUAL 0)
+    set(found_platform TRUE)
+  else()
+    foreach(platform IN LISTS _AOP_PLATFORMS)
+      set(check_var_name "OS_${platform}")
+      if(${${check_var_name}})
+        set(found_platform TRUE)
+        break()
+      endif()
+    endforeach()
   endif()
-endmacro()
+
+  if(_AOP_NUM_ARCHITECTURES EQUAL 0)
+    set(found_architecture TRUE)
+  else()
+    foreach(architecture IN LISTS _AOP_ARCHITECTURES)
+      if(OS_WINDOWS)
+        if("${architecture}" STREQUAL CMAKE_VS_PLATFORM_NAME)
+          set(found_architecture TRUE)
+        endif()
+      elseif(OS_MACOS)
+        if("${architecture}" IN_LIST CMAKE_OSX_ARCHITECTURES)
+          set(found_architecture TRUE)
+        endif()
+      elseif("${architecture}" STREQUAL CMAKE_SYSTEM_PROCESSOR)
+        set(found_architecture TRUE)
+      endif()
+    endforeach()
+  endif()
+
+  if(found_platform AND found_architecture)
+    add_subdirectory(${target})
+  elseif(_AOP_WITH_MESSAGE)
+    add_custom_target(${target} COMMENT "Dummy target for unavailable module ${target}")
+    target_disable(${target})
+  endif()
+endfunction()

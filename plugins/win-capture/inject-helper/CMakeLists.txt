@@ -1,20 +1,41 @@
-project(inject-helper)
+cmake_minimum_required(VERSION 3.28...3.30)
+
+if(NOT TARGET OBS::obfuscate)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/libobs" "${CMAKE_BINARY_DIR}/libobs")
+endif()
+
+if(NOT TARGET OBS::inject-library)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/obs-inject-library" obs-inject-library)
+endif()
 
 add_executable(inject-helper)
 
-target_sources(inject-helper PRIVATE inject-helper.c ../inject-library.c ../inject-library.h
-                                     ../../../libobs/util/windows/obfuscate.c ../../../libobs/util/windows/obfuscate.h)
+target_sources(inject-helper PRIVATE inject-helper.c)
 
-target_include_directories(inject-helper PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+target_link_libraries(inject-helper PRIVATE OBS::inject-library OBS::obfuscate)
 
-if(MSVC)
-  target_compile_options(inject-helper PRIVATE "$<IF:$<CONFIG:Debug>,/MTd,/MT>")
+if(OBS_PARENT_ARCHITECTURE STREQUAL CMAKE_VS_PLATFORM_NAME)
+  if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
+    add_custom_command(
+      TARGET inject-helper
+      POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" --build ${CMAKE_SOURCE_DIR}/build_x86 --config $<CONFIG> -t inject-helper
+      COMMENT "Build x86 inject-helper"
+    )
+  endif()
+
+  add_dependencies(win-capture inject-helper)
 endif()
 
-set_target_properties(inject-helper PROPERTIES FOLDER "plugins/win-capture"
-                                               OUTPUT_NAME "inject-helper$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,64,32>")
+if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
+  set(_OUTPUT_NAME inject-helper64)
+else()
+  set(_OUTPUT_NAME inject-helper32)
+endif()
 
-set(OBS_PLUGIN_DESTINATION "${OBS_DATA_DESTINATION}/obs-plugins/win-capture/")
-setup_plugin_target(inject-helper)
-
-add_dependencies(win-capture inject-helper)
+set_target_properties_obs(
+  inject-helper PROPERTIES
+                FOLDER plugins/win-capture
+                OUTPUT_NAME ${_OUTPUT_NAME}
+                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+)

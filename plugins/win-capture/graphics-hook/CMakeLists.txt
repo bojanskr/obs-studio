@@ -1,57 +1,81 @@
-project(graphics-hook)
+cmake_minimum_required(VERSION 3.28...3.30)
 
 find_package(Detours REQUIRED)
 find_package(Vulkan REQUIRED)
+
+if(NOT TARGET OBS::ipc-util)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/ipc-util" ipc-util)
+endif()
+
+if(NOT TARGET OBS::obfuscate)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/libobs" "${CMAKE_BINARY_DIR}/libobs")
+endif()
+
+if(NOT TARGET OBS::d3d8-api)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/obs-d3d8-api" obs-d3d8-api)
+endif()
+
+if(NOT TARGET OBS::hook-config)
+  add_subdirectory("${CMAKE_SOURCE_DIR}/shared/obs-hook-config" obs-hook-config)
+endif()
 
 add_library(graphics-hook MODULE)
 add_library(OBS::graphics-hook ALIAS graphics-hook)
 
 target_sources(
   graphics-hook
-  PRIVATE graphics-hook.c
-          graphics-hook.h
-          gl-capture.c
-          gl-decs.h
-          d3d8-capture.cpp
-          d3d9-capture.cpp
-          d3d9-patches.hpp
-          dxgi-capture.cpp
-          d3d10-capture.cpp
-          d3d11-capture.cpp
-          d3d12-capture.cpp
-          ../../../libobs/util/windows/obfuscate.c
-          ../../../libobs/util/windows/obfuscate.h
-          ../graphics-hook-ver.h
-          ../graphics-hook-info.h
-          ../hook-helpers.h
-          graphics-hook.rc)
-
-target_include_directories(graphics-hook PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
-
-target_link_libraries(graphics-hook PRIVATE OBS::ipc-util Detours::Detours dxguid)
-target_link_options(graphics-hook PRIVATE "LINKER:/IGNORE:4099")
-
-if(MSVC)
-  target_compile_options(graphics-hook PRIVATE "$<IF:$<CONFIG:Debug>,/MTd,/MT>")
-endif()
-
-set_target_properties(graphics-hook PROPERTIES FOLDER "plugins/win-capture"
-                                               OUTPUT_NAME "graphics-hook$<IF:$<EQUAL:${CMAKE_SIZEOF_VOID_P},8>,64,32>")
+  PRIVATE
+    d3d10-capture.cpp
+    d3d11-capture.cpp
+    d3d12-capture.cpp
+    d3d8-capture.cpp
+    d3d9-capture.cpp
+    d3d9-patches.hpp
+    dxgi-capture.cpp
+    gl-capture.c
+    gl-decs.h
+    graphics-hook.c
+    graphics-hook.h
+    graphics-hook.rc
+)
 
 target_compile_definitions(graphics-hook PRIVATE COMPILE_D3D12_HOOK)
 
+target_link_libraries(
+  graphics-hook
+  PRIVATE OBS::d3d8-api OBS::hook-config OBS::ipc-util OBS::obfuscate Detours::Detours dxguid
+)
+
+target_link_options(graphics-hook PRIVATE /IGNORE:4099)
+
 if(TARGET Vulkan::Vulkan)
   target_sources(graphics-hook PRIVATE vulkan-capture.c vulkan-capture.h)
-
   target_link_libraries(graphics-hook PRIVATE Vulkan::Vulkan)
-
   target_compile_definitions(graphics-hook PRIVATE COMPILE_VULKAN_HOOK)
-
-  add_target_resource(graphics-hook "${CMAKE_CURRENT_SOURCE_DIR}/obs-vulkan64.json" "obs-plugins/win-capture/")
-  add_target_resource(graphics-hook "${CMAKE_CURRENT_SOURCE_DIR}/obs-vulkan32.json" "obs-plugins/win-capture/")
 endif()
 
-set(OBS_PLUGIN_DESTINATION "${OBS_DATA_DESTINATION}/obs-plugins/win-capture/")
-setup_plugin_target(graphics-hook)
+if(OBS_PARENT_ARCHITECTURE STREQUAL CMAKE_VS_PLATFORM_NAME)
+  if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
+    add_custom_command(
+      TARGET graphics-hook
+      POST_BUILD
+      COMMAND "${CMAKE_COMMAND}" --build ${CMAKE_SOURCE_DIR}/build_x86 --config $<CONFIG> -t graphics-hook
+      COMMENT "Build x86 graphics-hook"
+    )
+  endif()
 
-add_dependencies(win-capture graphics-hook)
+  add_dependencies(win-capture graphics-hook)
+endif()
+
+if(CMAKE_VS_PLATFORM_NAME STREQUAL x64)
+  set(_OUTPUT_NAME graphics-hook64)
+else()
+  set(_OUTPUT_NAME graphics-hook32)
+endif()
+
+set_target_properties_obs(
+  graphics-hook PROPERTIES
+                FOLDER "plugins/win-capture"
+                OUTPUT_NAME ${_OUTPUT_NAME}
+                MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+)

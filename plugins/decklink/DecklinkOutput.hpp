@@ -10,8 +10,7 @@ protected:
 	int width;
 	int height;
 
-	static void DevicesChanged(void *param, DeckLinkDevice *device,
-				   bool added);
+	static void DevicesChanged(void *param, DeckLinkDevice *device, bool added);
 
 public:
 	const char *deviceHash;
@@ -21,9 +20,9 @@ public:
 	size_t audio_planes;
 	size_t audio_size;
 	int keyerMode;
+	bool force_sdr;
 
-	DeckLinkOutput(obs_output_t *output,
-		       DeckLinkDeviceDiscovery *discovery);
+	DeckLinkOutput(obs_output_t *output, DeckLinkDeviceDiscovery *discovery);
 	virtual ~DeckLinkOutput(void);
 	obs_output_t *GetOutput(void) const;
 	bool Activate(DeckLinkDevice *device, long long modeId) override;

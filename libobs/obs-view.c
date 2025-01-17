@@ -87,8 +87,7 @@ obs_source_t *obs_view_get_source(obs_view_t *view, uint32_t channel)
 	return source;
 }
 
-void obs_view_set_source(obs_view_t *view, uint32_t channel,
-			 obs_source_t *source)
+void obs_view_set_source(obs_view_t *view, uint32_t channel, obs_source_t *source)
 {
 	struct obs_source *prev_source;
 
@@ -192,9 +191,10 @@ void obs_view_remove(obs_view_t *view)
 		return;
 
 	pthread_mutex_lock(&obs->video.mixes_mutex);
-	size_t idx = find_mix_for_view(view);
-	if (idx != DARRAY_INVALID)
-		obs->video.mixes.array[idx]->view = NULL;
+	for (size_t i = 0, num = obs->video.mixes.num; i < num; i++) {
+		if (obs->video.mixes.array[i]->view == view)
+			obs->video.mixes.array[i]->view = NULL;
+	}
 	set_main_mix();
 	pthread_mutex_unlock(&obs->video.mixes_mutex);
 }
@@ -216,4 +216,19 @@ bool obs_view_get_video_info(obs_view_t *view, struct obs_video_info *ovi)
 	pthread_mutex_unlock(&obs->video.mixes_mutex);
 
 	return false;
+}
+
+void obs_view_enum_video_info(obs_view_t *view, bool (*enum_proc)(void *, struct obs_video_info *), void *param)
+{
+	pthread_mutex_lock(&obs->video.mixes_mutex);
+
+	for (size_t i = 0, num = obs->video.mixes.num; i < num; i++) {
+		struct obs_core_video_mix *mix = obs->video.mixes.array[i];
+		if (mix->view != view)
+			continue;
+		if (!enum_proc(param, &mix->ovi))
+			break;
+	}
+
+	pthread_mutex_unlock(&obs->video.mixes_mutex);
 }

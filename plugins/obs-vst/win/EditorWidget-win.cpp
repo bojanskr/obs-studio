@@ -28,15 +28,14 @@ void EditorWidget::buildEffectContainer(AEffect *effect)
 	RegisterClassExW(&wcex);
 
 	const auto style = WS_CAPTION | WS_THICKFRAME | WS_OVERLAPPEDWINDOW;
-	windowHandle = CreateWindowW(wcex.lpszClassName, TEXT(""), style, 0, 0,
-				     0, 0, nullptr, nullptr, nullptr, nullptr);
+	windowHandle =
+		CreateWindowW(wcex.lpszClassName, TEXT(""), style, 0, 0, 0, 0, nullptr, nullptr, nullptr, nullptr);
 
 	// set pointer to vst effect for window long
 	LONG_PTR wndPtr = (LONG_PTR)effect;
 	SetWindowLongPtr(windowHandle, -21 /*GWLP_USERDATA*/, wndPtr);
 
-	QWidget *widget = QWidget::createWindowContainer(
-		QWindow::fromWinId((WId)windowHandle), nullptr);
+	QWidget *widget = QWidget::createWindowContainer(QWindow::fromWinId((WId)windowHandle), nullptr);
 	widget->move(0, 0);
 	QGridLayout *layout = new QGridLayout();
 	layout->setContentsMargins(0, 0, 0, 0);
@@ -49,10 +48,16 @@ void EditorWidget::buildEffectContainer(AEffect *effect)
 	VstRect *vstRect = nullptr;
 	effect->dispatcher(effect, effEditGetRect, 0, 0, &vstRect, 0);
 	if (vstRect) {
-		widget->resize(vstRect->right - vstRect->left,
-			       vstRect->bottom - vstRect->top);
-		resize(vstRect->right - vstRect->left,
-		       vstRect->bottom - vstRect->top);
+		// on Windows, the size reported by 'effect' is larger than
+		// its actuall size by a factor of the monitor's ui scale,
+		// so the window size should be divided by the factor
+		qreal scale_factor = devicePixelRatioF();
+		int width = vstRect->right - vstRect->left;
+		int height = vstRect->bottom - vstRect->top;
+		width = static_cast<int>(width / scale_factor);
+		height = static_cast<int>(height / scale_factor);
+		widget->resize(width, height);
+		resize(width, height);
 	} else {
 		widget->resize(300, 300);
 	}
@@ -64,14 +69,21 @@ void EditorWidget::handleResizeRequest(int, int)
 	// so we must resize window manually
 
 	// get pointer to vst effect from window long
-	LONG_PTR wndPtr = (LONG_PTR)GetWindowLongPtrW(windowHandle,
-						      -21 /*GWLP_USERDATA*/);
+	LONG_PTR wndPtr = (LONG_PTR)GetWindowLongPtrW(windowHandle, -21 /*GWLP_USERDATA*/);
 	AEffect *effect = (AEffect *)(wndPtr);
 	VstRect *rec = nullptr;
 
 	effect->dispatcher(effect, effEditGetRect, 0, 0, &rec, 0);
 
 	if (rec) {
-		resize(rec->right - rec->left, rec->bottom - rec->top);
+		// on Windows, the size reported by 'effect' is larger than
+		// its actuall size by a factor of the monitor's ui scale,
+		// so the window size should be divided by the factor
+		qreal scale_factor = devicePixelRatioF();
+		int width = rec->right - rec->left;
+		int height = rec->bottom - rec->top;
+		width = static_cast<int>(width / scale_factor);
+		height = static_cast<int>(height / scale_factor);
+		resize(width, height);
 	}
 }

@@ -1,6 +1,4 @@
-cmake_minimum_required(VERSION 3.16...3.25)
-
-legacy_check()
+cmake_minimum_required(VERSION 3.28...3.30)
 
 option(ENABLE_VST "Enable building OBS with VST plugin" ON)
 
@@ -12,39 +10,39 @@ endif()
 add_library(obs-vst MODULE)
 add_library(OBS::vst ALIAS obs-vst)
 
-find_qt(COMPONENTS Widgets)
+find_package(Qt6 REQUIRED Widgets)
 
 target_sources(
   obs-vst
-  PRIVATE obs-vst.cpp
-          VSTPlugin.cpp
-          EditorWidget.cpp
-          headers/vst-plugin-callbacks.hpp
-          headers/EditorWidget.h
-          headers/VSTPlugin.h
-          vst_header/aeffectx.h)
+  PRIVATE
+    $<$<PLATFORM_ID:Darwin>:mac/EditorWidget-osx.mm>
+    $<$<PLATFORM_ID:Darwin>:mac/VSTPlugin-osx.mm>
+    $<$<PLATFORM_ID:Linux,FreeBSD,OpenBSD>:linux/EditorWidget-linux.cpp>
+    $<$<PLATFORM_ID:Linux,FreeBSD,OpenBSD>:linux/VSTPlugin-linux.cpp>
+    $<$<PLATFORM_ID:Windows>:win/EditorWidget-win.cpp>
+    $<$<PLATFORM_ID:Windows>:win/VSTPlugin-win.cpp>
+    EditorWidget.cpp
+    headers/EditorWidget.h
+    headers/vst-plugin-callbacks.hpp
+    headers/VSTPlugin.h
+    obs-vst.cpp
+    vst_header/aeffectx.h
+    VSTPlugin.cpp
+)
 
 target_include_directories(obs-vst PRIVATE vst_header)
-target_link_libraries(obs-vst PRIVATE OBS::libobs Qt::Widgets)
 
-if(OS_MACOS)
-  find_library(FOUNDATION Foundation)
-  find_library(COCOA Cocoa)
-  mark_as_advanced(COCOA FOUNDATION)
+target_link_libraries(
+  obs-vst
+  PRIVATE
+    OBS::libobs
+    Qt::Widgets
+    "$<$<PLATFORM_ID:Darwin>:$<LINK_LIBRARY:FRAMEWORK,Cocoa.framework>>"
+    "$<$<PLATFORM_ID:Darwin>:$<LINK_LIBRARY:FRAMEWORK,Foundation.framework>>"
+)
 
-  target_sources(obs-vst PRIVATE mac/VSTPlugin-osx.mm mac/EditorWidget-osx.mm)
-  target_link_libraries(obs-vst PRIVATE ${COCOA} ${FOUNDATION})
-
-elseif(OS_WINDOWS)
-  target_sources(obs-vst PRIVATE win/VSTPlugin-win.cpp win/EditorWidget-win.cpp)
-
-  set_property(
-    TARGET obs-vst
-    APPEND
-    PROPERTY AUTORCC_OPTIONS --format-version 1)
-
-elseif(OS_POSIX)
-  target_sources(obs-vst PRIVATE linux/VSTPlugin-linux.cpp linux/EditorWidget-linux.cpp)
+if(OS_WINDOWS)
+  set_property(TARGET obs-vst APPEND PROPERTY AUTORCC_OPTIONS --format-version 1)
 endif()
 
 set_target_properties_obs(
@@ -53,4 +51,5 @@ set_target_properties_obs(
              PREFIX ""
              AUTOMOC ON
              AUTOUIC ON
-             AUTORCC ON)
+             AUTORCC ON
+)
